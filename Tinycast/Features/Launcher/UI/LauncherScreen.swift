@@ -286,8 +286,8 @@ struct LauncherScreen: PaletteScreen {
         return core.runningApps.isRunning(app)
     }
 
-    /// The compact bar's icons: the first five favorites. The "…" that follows them is not one.
-    var compactFavorites: [AppEntry] { Array(pinnedFavorites.prefix(5)) }
+    /// The compact bar's icons: the first six favorites. The "…" that follows them is not one.
+    var compactFavorites: [AppEntry] { Array(pinnedFavorites.prefix(FavoriteSlots.compactVisibleCount)) }
 
     /// Whether the compact bar's "…" has anything to reveal.
     var hasUnshownFavorites: Bool { favoriteCount > compactFavorites.count }

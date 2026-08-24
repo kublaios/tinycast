@@ -765,7 +765,7 @@ struct RootPaletteView: View {
     }
 
     private func activateSelection() {
-        // Nothing is visibly selected when collapsed, so launch via ⌘1–⌘5 or typing.
+        // Nothing is visibly selected when collapsed, so launch via ⌘1–⌘6 or typing.
         guard !isCollapsed else { return }
         // An unfilled field blocks the launch; focus it instead of acting on a half-typed row.
         if let incomplete = headerAccessory?.firstIncompleteField {
@@ -844,7 +844,7 @@ struct EmptyResults: View {
     }
 }
 
-/// The compact bar's favorites strip: up to 5 buttons carrying their chord in the tooltip, then the
+/// The compact bar's favorites strip: up to 6 buttons carrying their chord in the tooltip, then the
 /// overflow, which is a button rather than a slot so no favorite loses its digit to it.
 private struct CompactFavoritesRow: View {
     let favorites: [AppEntry]

@@ -125,7 +125,7 @@ struct GeneralSettingsView: View {
                 }
                 Toggle(isOn: $settings.showFavoritesInCompactMode) {
                     Text("Show favorites in compact mode")
-                    Text("Pin favorite app icons to the right of the compact bar (⌘1–⌘5 to launch).")
+                    Text("Pin favorite app icons to the right of the compact bar (⌘1–⌘6 to launch).")
                 }
                 .disabled(!settings.compactMode)
                 Toggle(isOn: $settings.openOnCursorScreen) {

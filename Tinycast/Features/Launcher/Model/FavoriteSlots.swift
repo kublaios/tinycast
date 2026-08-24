@@ -4,6 +4,7 @@ import Foundation
 /// tab bar spells ten. Favorites past the tenth are listed and reorderable but carry no chord.
 enum FavoriteSlots {
     static let digits: [Character] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    static let compactVisibleCount = 6
 
     /// The favorite a digit launches, or nil when that key is not a slot.
     static func index(for digit: Character) -> Int? { digits.firstIndex(of: digit) }

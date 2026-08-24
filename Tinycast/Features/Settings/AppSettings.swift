@@ -130,7 +130,7 @@ final class AppSettings {
         didSet { defaults.set(compactMode, forKey: Key.compactMode.rawValue) }
     }
 
-    /// Pin favorite app icons to the right of the compact search bar (⌘1–⌘5 to launch).
+    /// Pin favorite app icons to the right of the compact search bar (⌘1–⌘6 to launch).
     var showFavoritesInCompactMode: Bool {
         didSet {
             defaults.set(

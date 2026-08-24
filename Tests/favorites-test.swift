@@ -16,6 +16,7 @@ struct FavoritesTest {
 
         // Ten digit keys is the ceiling: there is no ⌘10, so the eleventh favorite gets no chord.
         check("ten slots", FavoriteSlots.digits.count == 10)
+        check("six compact favorites are visible", FavoriteSlots.compactVisibleCount == 6)
         check("no digit repeats", Set(FavoriteSlots.digits).count == FavoriteSlots.digits.count)
 
         check("⌘1 is the first favorite", FavoriteSlots.index(for: "1") == 0)

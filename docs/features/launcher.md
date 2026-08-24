@@ -307,7 +307,7 @@ Both palette sizes serve the chords from the same prefix, because `paletteIsColl
 requires an empty query: **compact implies empty implies `favoriteCount` is the pinned prefix**. That
 is why `LauncherScreen.pinnedFavorites` feeds the strip, the chords and the numbered rows alike,
 rather than the compact bar re-deriving an empty-query order of its own. In compact the strip draws
-the first five; ⌘6–⌘0 still launch favorites it has no room for, and the "…" is a button after them
+the first six; ⌘7–⌘0 still launch favorites it has no room for, and the "…" is a button after them
 rather than a slot, so no favorite loses its digit to the overflow.
 
 Holding ⌘ swaps each numbered row's kind label for its chord. `PalettePanel` publishes the modifier
