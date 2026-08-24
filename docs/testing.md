@@ -56,6 +56,7 @@ If a change touches anything in the right column, the harness on the left is man
 | `fuzz-test` | `Launcher/Model/SearchRelevance.swift` |
 | `file-search-test` | `FileSearch/Model/`, plus the shared `FuzzyMatch` scorer |
 | `file-search-session-test` | serialized query execution, debounce coalescing and cancellation |
+| `menu-search-test` | `MenuSearch/Model/MenuSearchItem.swift` and its shared fuzzy scorer |
 | `ranking-test` | `Launcher/Model/LauncherRankingStore.swift` |
 | `scopes-test` | `Launcher/Model/SearchScopes.swift` |
 | `app-name-test` | `Platform/AppDisplayName.swift` — every path that names a scanned bundle |
@@ -281,6 +282,15 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - Recording a shortcut opens the palette straight into File Search, hidden from the launcher or not
 - The pane's checkbox and the Search Files row in Settings ▸ Commands move together
 - Export, clear both lists and the shortcut, re-import: all three return, defaults undo not duplicated
+
+### Menu Search
+
+- Search Menu Items scans the app behind Tinycast and lists enabled menu commands with their paths
+- Typing matches both leaf titles and parent-menu names; Return invokes the selected command
+- A configured global hotkey opens the same screen for the currently frontmost app
+- A disabled command and a separator do not appear; a submenu leaf does
+- Revoking Accessibility shows the permission state rather than an empty successful result
+- Changing a dynamic menu before Return fails safely rather than invoking a different command
 
 ### Notes
 

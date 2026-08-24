@@ -56,7 +56,8 @@ export → import within one build is guaranteed to round-trip.
 `legacyKey` returns nil for an action that postdates the scheme, so nothing new has to invent a
 migration key it never wrote. It is scheduled for deletion.
 
-`hotkey.searchFiles`, `hotkey.toggleClipboard`, `hotkey.toggleEmoji`, `hotkey.showNotes`,
+`hotkey.searchFiles`, `hotkey.searchMenuItems`, `hotkey.toggleClipboard`, `hotkey.toggleEmoji`,
+`hotkey.showNotes`,
 `hotkey.createNote`, `hotkey.searchNotes`, `hotkey.joinNextMeeting`, `hotkey.mySchedule` and
 `hotkey.createEvent` are the built-in launcher commands with an action of their own, alongside `hotkey.togglePalette`, which has no command row. They are the only `CommandID`s whose
 `hotKeyAction` is non-nil — which is what puts a recorder on their rows in Settings ▸ Commands, and a

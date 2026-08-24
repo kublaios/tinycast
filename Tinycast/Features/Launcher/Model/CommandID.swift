@@ -6,6 +6,7 @@ enum CommandID: String, CaseIterable, Sendable {
     case clipboardHistory = "command:clipboard-history"
     case searchEmoji = "command:search-emoji"
     case searchFiles = "command:search-files"
+    case searchMenuItems = "command:search-menu-items"
     case joinNextMeeting = "command:join-next-meeting"
     case copyMeetingLink = "command:copy-meeting-link"
     case mySchedule = "command:my-schedule"
@@ -32,6 +33,7 @@ enum CommandID: String, CaseIterable, Sendable {
         case .clipboardHistory: return "Clipboard History"
         case .searchEmoji: return "Search Emoji & Symbols"
         case .searchFiles: return "Search Files"
+        case .searchMenuItems: return "Search Menu Items"
         case .joinNextMeeting: return "Join Next Meeting"
         case .copyMeetingLink: return "Copy Meeting Link"
         case .mySchedule: return "My Schedule"
@@ -60,6 +62,7 @@ enum CommandID: String, CaseIterable, Sendable {
         case .clipboardHistory: return "doc.on.clipboard"
         case .searchEmoji: return "face.smiling"
         case .searchFiles: return "doc.text.magnifyingglass"
+        case .searchMenuItems: return "menubar.rectangle"
         case .joinNextMeeting: return "video.fill"
         case .copyMeetingLink: return "link"
         case .mySchedule: return "calendar"
@@ -86,6 +89,7 @@ enum CommandID: String, CaseIterable, Sendable {
     var hotKeyAction: HotKeyAction? {
         switch self {
         case .searchFiles: return .searchFiles
+        case .searchMenuItems: return .searchMenuItems
         case .clipboardHistory: return .toggleClipboard
         case .searchEmoji: return .toggleEmoji
         case .showNotes: return .showNotes
