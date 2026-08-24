@@ -13,6 +13,7 @@ final class LauncherCoordinator {
     private let windowCommandCoordinator: WindowCommandCoordinator
     private let snippetExpansion: SnippetExpansionCoordinator
     private let fileSearchCoordinator: FileSearchCoordinator
+    private let menuSearchCoordinator: MenuSearchCoordinator
     private let notesCoordinator: NotesCoordinator
     private let extensionCoordinator: ExtensionCoordinator
     private let calendarCoordinator: CalendarCoordinator
@@ -30,6 +31,7 @@ final class LauncherCoordinator {
         windowCommandCoordinator: WindowCommandCoordinator,
         snippetExpansion: SnippetExpansionCoordinator,
         fileSearchCoordinator: FileSearchCoordinator,
+        menuSearchCoordinator: MenuSearchCoordinator,
         notesCoordinator: NotesCoordinator,
         extensionCoordinator: ExtensionCoordinator,
         calendarCoordinator: CalendarCoordinator,
@@ -45,6 +47,7 @@ final class LauncherCoordinator {
         self.windowCommandCoordinator = windowCommandCoordinator
         self.snippetExpansion = snippetExpansion
         self.fileSearchCoordinator = fileSearchCoordinator
+        self.menuSearchCoordinator = menuSearchCoordinator
         self.notesCoordinator = notesCoordinator
         self.extensionCoordinator = extensionCoordinator
         self.calendarCoordinator = calendarCoordinator
@@ -123,6 +126,8 @@ final class LauncherCoordinator {
             paletteCoordinator.showPalette(mode: .emoji)
         case .searchFiles:
             fileSearchCoordinator.show()
+        case .searchMenuItems:
+            menuSearchCoordinator.show()
         case .joinNextMeeting:
             calendarCoordinator.joinNextMeeting()
         case .copyMeetingLink:

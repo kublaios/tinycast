@@ -70,6 +70,7 @@ struct SettingsBackup: Codable {
         var createNote: HotKeyBinding?
         var searchNotes: HotKeyBinding?
         var searchFiles: HotKeyBinding?
+        var searchMenuItems: HotKeyBinding?
         var joinNextMeeting: HotKeyBinding?
         var mySchedule: HotKeyBinding?
         var createEvent: HotKeyBinding?
@@ -150,6 +151,7 @@ extension SettingsBackup {
         hotkeys.createNote = hk.binding(for: .createNote)
         hotkeys.searchNotes = hk.binding(for: .searchNotes)
         hotkeys.searchFiles = hk.binding(for: .searchFiles)
+        hotkeys.searchMenuItems = hk.binding(for: .searchMenuItems)
         hotkeys.joinNextMeeting = hk.binding(for: .joinNextMeeting)
         hotkeys.mySchedule = hk.binding(for: .mySchedule)
         hotkeys.createEvent = hk.binding(for: .createEvent)
@@ -396,6 +398,7 @@ extension SettingsBackup {
         if let b = hotkeys.createNote { apply(b, .createNote) }
         if let b = hotkeys.searchNotes { apply(b, .searchNotes) }
         if let b = hotkeys.searchFiles { apply(b, .searchFiles) }
+        if let b = hotkeys.searchMenuItems { apply(b, .searchMenuItems) }
         if let b = hotkeys.joinNextMeeting { apply(b, .joinNextMeeting) }
         if let b = hotkeys.mySchedule { apply(b, .mySchedule) }
         if let b = hotkeys.createEvent { apply(b, .createEvent) }
