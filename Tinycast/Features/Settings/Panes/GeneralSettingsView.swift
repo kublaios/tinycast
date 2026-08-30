@@ -149,6 +149,10 @@ struct GeneralSettingsView: View {
                     Text("Launch at login")
                     Text("Start Tinycast automatically when you log in.")
                 }
+                Toggle(isOn: $settings.automaticUpdateChecksEnabled) {
+                    Text("Check for updates automatically")
+                    Text("Check GitHub daily and offer new releases when they are available.")
+                }
                 Toggle(isOn: $showInMenuBar) {
                     Text("Show in menu bar")
                     Text("Keep the Tinycast icon in the menu bar. Shortcuts still work when hidden.")

@@ -190,7 +190,7 @@ final class AppCore {
             updateChecker.onUpdateAvailable = { [weak self] release in
                 self?.updateCoordinator.presentIfAvailable(release) ?? true
             }
-            updateChecker.start()
+            applyAutomaticUpdateChecks()
 
             hyperKeyTap.healthTicker = healthTicker
             hotKeys.doubleTapMonitor.healthTicker = healthTicker
@@ -296,7 +296,8 @@ final class AppCore {
         case .extensionCommand(let entryID):
             return appIndex.apps.first { $0.kind == .extensionCommand && $0.id == entryID }?.name
         case .togglePalette, .toggleClipboard, .toggleEmoji, .searchFiles, .searchMenuItems,
-            .systemAction, .showNotes, .createNote, .searchNotes, .windowCommand, .joinNextMeeting, .mySchedule,
+            .systemAction, .showNotes, .createNote, .searchNotes, .windowCommand, .joinNextMeeting,
+            .mySchedule,
             .createEvent:
             return nil
         }
@@ -336,6 +337,9 @@ final class AppCore {
         track({ _ = $0.fileSearchEnabled }, reproject: { $0.fileSearchCoordinator.applyEnabled() })
         track({ _ = $0.notesEnabled }, reproject: { $0.notesCoordinator.applyEnabled() })
         track(
+            { _ = $0.automaticUpdateChecksEnabled },
+            reproject: { $0.applyAutomaticUpdateChecks() })
+        track(
             {
                 _ = $0.calendarEnabled
                 _ = $0.calendarShowInLauncher
@@ -357,6 +361,14 @@ final class AppCore {
             { _ = $0.snippetsShowInLauncher },
             reproject: { $0.snippetExpansion.applySnippetsLauncherPresence() })
         track({ _ = $0.appearance }, reproject: { $0.applyAppearance() })
+    }
+
+    private func applyAutomaticUpdateChecks() {
+        if settings.automaticUpdateChecksEnabled {
+            updateChecker.start()
+        } else {
+            updateChecker.stop()
+        }
     }
 
     /// `.system` resolves to `nil`, which is what makes AppKit follow macOS without anything polling.

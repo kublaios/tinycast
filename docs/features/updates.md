@@ -1,8 +1,8 @@
 # Updates
 
-Tinycast checks GitHub Releases once a day, offers the newest release for its own channel in a native
-window with its release notes, installs it and relaunches. There is no Sparkle and no appcast: the
-release feed the website already reads is the feed the app reads.
+Tinycast can check GitHub Releases once a day, offer the newest release for its own channel in a native
+window with its release notes, install it and relaunch. There is no Sparkle and no appcast: the release
+feed the website already reads is the feed the app reads.
 
 ## Invariants
 
@@ -39,8 +39,9 @@ release feed the website already reads is the feed the app reads.
   have found the desktop idle. The window itself still appears at most once per version per launch:
   `announcedVersion` is set the moment an offer lands, so re-offering can never turn into nagging.
   Readiness is asked again at the click.
-- **Nothing about updates is persisted in `AppSettings`.** The feature owns one cache file, so no
-  `AppSettingsKey` and no `SettingsBackupCoverage` entry exist for it.
+- **Automatic checks are a persisted preference.** `automaticUpdateChecksEnabled` defaults on and
+  travels with settings backups. Turning it off cancels the pump and suppresses uninvited network
+  checks and prompts; the explicit Check for Updates action remains available.
 - **The window shows the changelog and nothing else.** CI writes install instructions below
   `<!-- tinycast:install -->`, and `ReleaseNotes.summary` — the single reader of that marker, called
   where the feed is parsed so the cache holds the cut text too — drops them. An app that installs its
@@ -74,7 +75,9 @@ tag disagrees with its `prerelease` flag is treated as mis-published and skipped
 ## Checking
 
 `UpdateCheckStore` copies `CurrencyRateStore`: a private `.ephemeral`, `urlCache = nil` session, a
-self-rescheduling pump, and one atomic JSON file.
+self-rescheduling pump, and one atomic JSON file. The pump runs only while automatic checks are enabled;
+disabling them cancels its current sleep or request before it can announce a release. A manual check
+bypasses the pump and remains available.
 
 ```text
 ~/Library/Caches/<bundle-id>/update-check.json

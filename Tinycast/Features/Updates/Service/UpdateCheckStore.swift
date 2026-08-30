@@ -75,6 +75,12 @@ final class UpdateCheckStore {
         }
     }
 
+    func stop() {
+        pump?.cancel()
+        pump = nil
+        withheldRetries = 0
+    }
+
     /// The manual path: ignores freshness, and reports whether GitHub actually answered.
     @discardableResult
     func check() async -> Bool {
@@ -102,6 +108,7 @@ final class UpdateCheckStore {
         if wait <= 0 {
             wait = await check() ? Self.refreshInterval : Self.retryInterval
         }
+        guard !Task.isCancelled else { return Self.refreshInterval }
         if announce() {
             withheldRetries = 0
         } else if withheldRetries < Self.withheldRetryLimit {

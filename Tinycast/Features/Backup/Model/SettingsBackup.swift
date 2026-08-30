@@ -31,6 +31,7 @@ struct SettingsBackup: Codable {
         var openOnCursorScreen: Bool?
         // Safe to carry: it grants no permission class, just repositions the window.
         var paletteDraggable: Bool?
+        var automaticUpdateChecksEnabled: Bool?
         var fileSearchEnabled: Bool?
         var fileSearchScopes: [String]?
         var fileSearchIgnorePatterns: [String]?
@@ -118,6 +119,7 @@ extension SettingsBackup {
             searchScopes: s.searchScopes,
             openOnCursorScreen: s.openOnCursorScreen,
             paletteDraggable: s.paletteDraggable,
+            automaticUpdateChecksEnabled: s.automaticUpdateChecksEnabled,
             fileSearchEnabled: s.fileSearchEnabled,
             fileSearchScopes: s.fileSearchScopes,
             fileSearchIgnorePatterns: s.fileSearchIgnorePatterns,
@@ -282,6 +284,10 @@ extension SettingsBackup {
         }
         if let flag = s.paletteDraggable {
             settings.paletteDraggable = flag
+            count += 1
+        }
+        if let flag = s.automaticUpdateChecksEnabled {
+            settings.automaticUpdateChecksEnabled = flag
             count += 1
         }
         // Writing through AppSettings is enough; AppCore's sinks re-project the rest.
