@@ -24,6 +24,8 @@ open with an `## Invariants` section; read it before changing anything in that a
 
 [palette](features/palette.md) ·
 [launcher](features/launcher.md) ·
+[AI providers and chat](features/ai.md) ·
+[quick actions](features/quick-actions.md) ·
 [clipboard](features/clipboard.md) ·
 [calculator](features/calculator.md) ·
 [calendar](features/calendar.md) ·
@@ -40,7 +42,8 @@ open with an `## Invariants` section; read it before changing anything in that a
 [backup](features/backup.md) ·
 [Raycast import](features/raycast-import.md) ·
 [Raycast extensions](features/extensions.md) ·
-[updates](features/updates.md)
+[updates](features/updates.md) ·
+[support](features/support.md)
 
 ## Contributing
 

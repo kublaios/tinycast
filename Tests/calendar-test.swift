@@ -1,5 +1,4 @@
-// Standalone test for meeting-link detection, the join and menu-bar windows, auto-join,
-// the event draft and the day buckets.
+// Meeting links, the join and menu-bar windows, auto-join, drafts, buckets and span.
 import Foundation
 
 @main
@@ -21,11 +20,13 @@ struct CalendarTests {
         fieldPrecedence()
         linkScanning()
         appURLRewrites()
+        accountPrefill()
         agendaFiltering()
         cardWindow()
         chordFallsBackWiderThanTheCard()
         countdownStrings()
         dayBuckets()
+        readSpan()
         menuBarWindow()
         menuBarFiltering()
         menuBarTitles()
@@ -137,6 +138,37 @@ struct CalendarTests {
         expect(link("https://example.com/room")?.appURL == nil, "a bare link opens the web")
     }
 
+    static func accountPrefill() {
+        expect(
+            hosted("https://meet.google.com/abc-defg-hij", "user@domain.com")?.webURL.absoluteString
+                == "https://meet.google.com/abc-defg-hij?authuser=user@domain.com",
+            "a Meet link opens as the account whose calendar carried it")
+        expect(
+            hosted("https://meet.google.com/abc?hs=1", "user@domain.com")?.webURL.absoluteString
+                == "https://meet.google.com/abc?hs=1&authuser=user@domain.com",
+            "the account joins a query the invite already had")
+        expect(
+            hosted("https://meet.google.com/abc?authuser=1", "user@domain.com")?.webURL
+                .absoluteString == "https://meet.google.com/abc?authuser=1",
+            "a link naming its own account is left alone")
+        expect(
+            hosted("https://meet.google.com/abc", "a+b@domain.com")?.webURL.absoluteString
+                == "https://meet.google.com/abc?authuser=a%2Bb@domain.com",
+            "a plus in the address is encoded, so it cannot be read as a space")
+        expect(
+            hosted("https://us02web.zoom.us/j/89", "user@domain.com")?.webURL.absoluteString
+                == "https://us02web.zoom.us/j/89",
+            "no other provider takes an account in the URL")
+        expect(
+            hosted("https://meet.google.com/abc-defg-hij", nil)?.webURL.absoluteString
+                == "https://meet.google.com/abc-defg-hij",
+            "a calendar with no address of its own leaves the link as written")
+        expect(
+            hosted("https://meet.google.com/abc-defg-hij", "user@domain.com")?.url.absoluteString
+                == "https://meet.google.com/abc-defg-hij",
+            "the link as written is what Copy Meeting Link keeps")
+    }
+
     // MARK: - The join window
 
     static func agendaFiltering() {
@@ -145,8 +177,16 @@ struct CalendarTests {
             event(id: "allday", start: 30, isAllDay: true),
             event(id: "declined", start: 30, isDeclined: true)
         ]
-        let agenda = UpcomingWindow.agenda(from: events)
+        let agenda = UpcomingWindow.agenda(from: events, now: at(0))
         expect(agenda.map(\.id) == ["early", "late"], "the agenda is timed, accepted and in start order")
+
+        let over = event(id: "over", start: 0, minutes: 30)
+        expect(
+            UpcomingWindow.agenda(from: [over], now: at(30)).isEmpty,
+            "a meeting is off the agenda the moment it ends, the way it leaves the menu bar")
+        expect(
+            UpcomingWindow.agenda(from: [over], now: at(29)).map(\.id) == ["over"],
+            "one still running stays, however long ago it started")
     }
 
     static func cardWindow() {
@@ -179,7 +219,7 @@ struct CalendarTests {
             window.carded(from: [linkless], now: start) == nil,
             "a meeting with no link is never carded")
         expect(
-            UpcomingWindow.agenda(from: [linkless]).map(\.id) == ["linkless"],
+            UpcomingWindow.agenda(from: [linkless], now: start).map(\.id) == ["linkless"],
             "but it stays on the agenda, so it is still listed and searchable")
     }
 
@@ -393,6 +433,29 @@ struct CalendarTests {
             "yesterday has no bucket")
     }
 
+    // MARK: - The read span
+
+    static func readSpan() {
+        let now = date(year: 2026, month: 8, day: 23, hour: 22)
+        let midnight = date(year: 2026, month: 8, day: 23, hour: 0)
+        expect(
+            MeetingSpan(includesTomorrow: false) == .today
+                && MeetingSpan(includesTomorrow: true) == .todayAndTomorrow,
+            "the setting names the span")
+        expect(
+            MeetingSpan.today.interval(from: now, calendar: calendar)
+                == DateInterval(start: midnight, end: date(year: 2026, month: 8, day: 24, hour: 0)),
+            "today alone runs midnight to midnight, from an evening `now`")
+        expect(
+            MeetingSpan.todayAndTomorrow.interval(from: now, calendar: calendar)
+                == DateInterval(start: midnight, end: date(year: 2026, month: 8, day: 25, hour: 0)),
+            "tomorrow adds a second day to the same start")
+        expect(
+            MeetingSpan.today.possessivePhrase == "today's"
+                && MeetingSpan.todayAndTomorrow.orPhrase == "today or tomorrow",
+            "the wording follows the span")
+    }
+
     // MARK: - Helpers
 
     static let epoch = Date(timeIntervalSinceReferenceDate: 0)
@@ -407,6 +470,10 @@ struct CalendarTests {
     }
 
     static func link(_ text: String) -> MeetingLink? { MeetingLink.detect(in: text) }
+
+    static func hosted(_ text: String, _ account: String?) -> MeetingLink? {
+        MeetingLink.detect(fields: [text], account: account)
+    }
 
     static func provider(_ text: String) -> MeetingLink.Provider? { link(text)?.provider }
 

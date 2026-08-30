@@ -42,5 +42,6 @@ and full menu path, preferring the direct title when scores tie. Results are cap
 Every open rescans. Leaving or hiding the screen cancels its task and clears the target and rows. A
 late scan is discarded by the session revision, so it cannot publish into a newer app's menu.
 
-The built-in command is always present. Its `HotKeyAction.searchMenuItems` binding is stored under
-`hotkey.searchMenuItems` and travels with settings backups. No binding is assigned by default.
+The built-in command is always present. Like every bindable built-in, its shortcut is
+`HotKeyAction.command(.searchMenuItems)` and travels in the command map in settings backups. No binding
+is assigned by default.

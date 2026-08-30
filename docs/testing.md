@@ -26,6 +26,23 @@ what you touched.
 ./Scripts/run-tests.sh calc-test    # just one, while iterating
 ```
 
+The suite runs in parallel, `hw.ncpu` harnesses at a time, which is what takes it from about 140
+seconds to about 15. `TINYCAST_TEST_JOBS=1` forces it back to one at a time. Parallelism is safe
+because each harness already roots its scratch state somewhere of its own — a UUID-suffixed
+`temporaryDirectory`, a `UserDefaults(suiteName:)`, or `NSPasteboard.withUniqueName()` — and a new
+harness must keep doing that rather than reach for a fixed path.
+
+Two consequences worth knowing. Status lines arrive in **completion order**, not the order the `run`
+lines are written; and a failing harness's compiler diagnostics or assertion output are replayed
+together at the bottom, under its name, rather than streamed where they happened. That is deliberate:
+a compiler diagnostic is far longer than `PIPE_BUF`, so eleven workers streaming at once would
+interleave into nonsense.
+
+A `run` line takes two optional markers before the harness name. `-O` compiles that harness optimised,
+which is worth it only where the run dominates the compile — `raycast-test` spends 47 seconds in
+scrypt at `-Onone` and one second at `-O`. `slow` dispatches it in the first wave, so the longest
+harnesses are not still running after everything else has finished.
+
 The script is the **only** place the harness set is written down — CI runs exactly this, so the two
 cannot drift. Adding a harness means adding one `run` line.
 
@@ -67,6 +84,7 @@ If a change touches anything in the right column, the harness on the left is man
 | `palette-selection-test` | `Features/PaletteRowIndex.swift` |
 | `palette-placement-test` | `DesignSystem/Theme.swift`, `Palette/PalettePlacement.swift` |
 | `hotkey-test` | `HotKeys/Model/DoubleTapModifier.swift`, `DoubleTapDetector.swift`, `HyperKey.swift`, `HotKeyAction.swift`, `Service/KeyShortcut.swift`, and the command→action mapping in `Launcher/Model/CommandID.swift` |
+| `fallback-test` | `Launcher/Model/Fallback.swift`, plus the `CommandID` and `Quicklink` ids it is built from |
 | `callout-test` | `DesignSystem/Theme.swift`, `HotKeys/UI/CalloutPlacement.swift` |
 | `system-action-test` | `SystemActions/Model/SystemAction.swift` |
 | `volume-test` | `SystemActions/Model/VolumeLevel.swift` |
@@ -77,14 +95,16 @@ If a change touches anything in the right column, the harness on the left is man
 | `snippets-test` | all of `Snippets/Model/` and `Snippets/Service/`, plus `Platform/HealthTicker.swift` |
 | `notes-test` | all of `Notes/Model/` and `Notes/Service/`, plus the real fuzzy matcher and signposts |
 | `notes-editor-test` | the literal Notes editor with real TextKit 2 and AppKit editing objects |
-| `raycast-test` | `Backup/Model/RaycastFormat.swift`, `RaycastV1Decoder.swift`, `Platform/Compression/Zlib.swift` |
+| `raycast-test` | `Backup/Service/RaycastDecoder.swift`, `Scrypt.swift`, `Platform/Compression/Zlib.swift` |
 | `symbols-test` | `Extensions/Service/SymbolCatalog.swift`, against this machine's CoreGlyphs |
 | `ext-store-test` | `Extensions/Model/` — the registry model and both registry APIs' parsers |
 | `ext-test` | the extension runtime end to end — boots a real bundle in JavaScriptCore and renders it |
 | `ext-icon-test` | `Extensions/Service/ExtensionIconCache.swift` — artwork sizing and its fallback |
-| `entry-icon-test` | `EntryIcon` — that each case draws, caches and prints apart from the others |
+| `entry-icon-test` | `EntryIcon` — that each case draws, caches and prints apart from the others, and that a moved `FileIconStamp` retires the bitmap decoded before it |
 | `settings-backup-test` | `Settings/AppSettingsKey.swift`, `Backup/Model/SettingsBackupCoverage.swift` |
+| `backup-archive-test` | all of `Backup/Model/`, plus `Backup/Service/BackupStaging.swift` |
 | `updates-test` | `Updates/Model/` — version precedence, channel filtering, install route, readiness |
+| `support-test` | `Support/Model/` — when the support reminder comes due, and a clock moved backwards |
 
 A harness that passed before a change passes after it. There is no "I'll fix it next commit" and no
 commenting out a case. If a change genuinely invalidates an assertion, the assertion is rewritten in the
@@ -126,7 +146,7 @@ find ~/Library/Developer/Xcode/DerivedData -name "Tinycast*.app" -maxdepth 6 -pr
 - No `@unchecked Sendable`, `nonisolated(unsafe)` or `assumeIsolated` added without a stated reason.
 - The type-checker did not time out. `LauncherList.rows` already carries an explicit annotation for
   this reason; the fix for a timeout is an annotation, not a restructure.
-- Release binary under **4 MB**, and under 2% growth for an ordinary change.
+- Release binary under **5 MB**, and under 2% growth for an ordinary change.
 
 ### Lint
 
@@ -179,6 +199,7 @@ Measured at the end of the 2026 refactor, on `main`. Useful as orders of magnitu
 | `SettingsPaneScanner` warm scan | 0.014 ms (16.5 ms cold), 52 panes |
 | Largest view / owner | `RootPaletteView` 662 lines, `AppCore` 284 lines |
 | Comment density | 1,653 of 27,289 source lines (6.1%) |
+| The harness suite | ~15 s wall clock, 11-way parallel (~98 s serial, ~140 s before either) |
 | `palette-selection-test` | 111,684 assertions — a tripwire: a change in this count means the row-order model moved |
 | `SnippetKeywordPolicy` match | 7 µs/keystroke at 50 keywords, 59 µs at 1,000 — the `lowercased()` is 0.09 µs of it |
 | `ClipboardStore.pinnedItems` | 27–127 µs per uncached search, 1,000-row window — no cache earns its invalidation yet |
@@ -211,7 +232,7 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - With a calculation typed, the calculator card is first and is selected first
 - Section headers appear in order: Favorites, Applications, System Settings, Quicklinks, Snippets,
   System Actions, Window Management, Custom Commands, Commands
-- ⌘K opens the Actions menu; ↑/↓ move it, ↵ activates, Escape closes the menu rather than the palette
+- With a non-ASCII input source active, ⌘K opens Actions; ↑/↓ move it, ↵ activates, Escape closes it
 - While a menu is open, typing does **not** change the query and the caret is hidden
 - Tab toggles launcher ↔ clipboard; bare Backspace on an empty query backs out of a sub-screen
 - Launching an app focuses it; escaping the palette returns focus to the app you came from
@@ -367,8 +388,11 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - Hide Current Event on Automatically clears the entry at the start and hands the space to the next
   event inside its lead time; on 5 minutes it lingers counting up, then clears
 - Clicking the menu bar item opens the menu with `Join <title>` on top — a bare click never joins
-- Camera Preview on: ↵ on the join card opens the panel, ↵ joins, Esc drops the join; the camera
-  light goes out with the panel, and the first run prompts once
+- Camera Preview on: ↵ on the join card opens the panel **already showing live video** — no black
+  frame, no blank mid-preview; ↵ joins, Esc drops the join; the camera light goes out with the
+  panel, and the first run prompts once, before any panel appears
+- A meeting that ends leaves the launcher results and `My Schedule` on the same minute boundary it
+  leaves the menu bar, with the palette open or closed over the end
 - Auto Join on: the meeting opens itself at its start, **once** — dismiss it and it does not return.
   With confirm on and camera preview off, the dialog asks first
 - Arming Auto Join during a meeting already under way joins nothing
@@ -394,8 +418,14 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 
 - Every pane renders and the sidebar switches without flicker
 - A feature switch takes effect in the launcher immediately; every setting survives relaunch
-- Export produces a file; import applies it and reports a sensible summary
+- Export produces a `.tinycast`; import applies it and reports a per-category summary
+- Untick a category on export, and the import picker greys that row out rather than offering it
+- Untick a category on **import** and confirm it did not arrive, while the ticked ones did
+- An image clip round-trips and still renders; the archive can then be deleted without breaking it
+- A file whose `manifest.json` `format` was hand-edited is refused **with a message naming it**
+- Cancelling the save panel leaves nothing in `~/Library/Caches/com.tinycast.app.dev/backup-staging/`
 - **`snippetsEnabled` is not in the exported file**, and importing does not enable snippets
+- Nothing in the extracted tree names a Keychain item, an extension, or an AI conversation
 
 ### Clean install
 

@@ -69,6 +69,8 @@ struct MenuSearchTests {
 
     static func limits() {
         expect(MenuSearchItem.matching(items, query: "", limit: 2).count == 2, "empty results obey the cap")
-        expect(MenuSearchItem.matching(items, query: "file", limit: 1).count == 1, "matched results obey the cap")
+        expect(
+            MenuSearchItem.matching(items, query: "file", limit: 1).count == 1, "matched results obey the cap"
+        )
     }
 }

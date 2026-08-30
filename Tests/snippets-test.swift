@@ -16,6 +16,7 @@ struct SnippetsTests {
         try testRepositoryStorage()
         try await testRepositoryConcurrency()
         try await testDeliveryQueueAndPasteboard()
+        await testCopySelectionFallback()
         try await testStoreWatcher()
         testTemplateExpansion()
         testDynamicPlaceholders()
@@ -59,7 +60,7 @@ struct SnippetsTests {
         check(
             "Raycast import keeps valid entries and source order",
             imported.map(\.name) == ["Email", "Multiline 雪", "Blank Keyword"])
-        // The remaining assertions index into the result, so a wrong count has to fail rather than trap.
+        // The assertions index the result, so a wrong count must fail rather than trap.
         guard imported.count == 3 else { return }
         check("Raycast import preserves text and Unicode", imported[1].text == "First\nSecond")
         check(
@@ -173,7 +174,7 @@ struct SnippetsTests {
         expectParseError(
             "unknown frontmatter key is rejected", content: "---\nunknown: \"value\"\n---\n", fileURL: fileURL
         )
-        // These keys were removed or renamed; a file still carrying one is reported, not silently half-loaded.
+        // A file still carrying a removed key is reported, not silently half-loaded.
         expectParseError(
             "the removed category key is rejected", content: "---\ncategory: \"Work\"\n---\n",
             fileURL: fileURL)
@@ -336,7 +337,7 @@ struct SnippetsTests {
         } catch SnippetRepository.RepositoryError.conflict {
             check("stale deletes report a revision conflict", true)
         }
-        // Everything below needs the reloaded record; report the loss instead of trapping, and keep the later contracts running.
+        // Report the loss instead of trapping, and keep the later contracts running.
         if let currentSaved = try crudRepository.load().records.first(where: { $0.id == saved.id }) {
             try crudRepository.delete(
                 fileURL: currentSaved.fileURL,
@@ -450,19 +451,12 @@ struct SnippetsTests {
         var aliasCoordinationHeld = true
         for index in 0..<20 where aliasCoordinationHeld {
             let bundleIdentifier = "com.example.symlink-save-\(index)"
-            let revalidation = RevalidationRendezvous()
-            let hooks = SnippetRepository.MutationHooks(afterRevalidation: { mutation, _ in
-                guard case .save = mutation else { return }
-                revalidation.arriveAndWait()
-            })
             let directRepository = SnippetRepository(
                 bundleIdentifier: bundleIdentifier,
-                applicationSupportRoot: physicalSupport,
-                mutationHooks: hooks)
+                applicationSupportRoot: physicalSupport)
             let symlinkedRepository = SnippetRepository(
                 bundleIdentifier: bundleIdentifier,
-                applicationSupportRoot: symlinkedSupport,
-                mutationHooks: hooks)
+                applicationSupportRoot: symlinkedSupport)
             let symlinkedRecord = try symlinkedRepository.create(
                 Snippet(name: "Alias Race", text: "Original"))
             guard
@@ -563,8 +557,45 @@ struct SnippetsTests {
         }
     }
 
+    /// The dangerous case is a copy that never lands, returning what the reader last copied.
+    private static func testCopySelectionFallback() async {
+        let injector = TextInjector(clipboardManager: ClipboardManager(), settings: AppSettings())
+        let backing = NSPasteboard(name: .init("tinycast-copy-tests-\(UUID().uuidString)"))
+        defer { backing.releaseGlobally() }
+        let pasteboard = CountingPasteboard(backing: backing)
+
+        func seed(_ text: String) {
+            let item = NSPasteboardItem()
+            item.setString(text, forType: .string)
+            backing.clearContents()
+            _ = backing.writeObjects([item])
+        }
+
+        seed("Something the reader copied earlier")
+        let unchanged = await injector.copySelection(from: nil, pasteboard: pasteboard)
+        check("a copy that never lands returns nothing, not the stale clipboard", unchanged == nil)
+        check(
+            "the reader's clipboard survives a failed copy",
+            backing.string(forType: .string) == "Something the reader copied earlier")
+
+        seed("Original")
+        let writer = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            let item = NSPasteboardItem()
+            item.setString("the selection", forType: .string)
+            backing.clearContents()
+            _ = backing.writeObjects([item])
+        }
+        let copied = await injector.copySelection(from: nil, pasteboard: pasteboard)
+        _ = await writer.result
+        check("a copy that lands is read back: \(copied ?? "nil")", copied == "the selection")
+        check(
+            "the reader's clipboard is restored afterwards",
+            backing.string(forType: .string) == "Original")
+    }
+
     private static func testDeliveryQueueAndPasteboard() async throws {
-        let queue = SnippetDeliveryQueue()
+        let queue = DeliveryQueue()
         var order: [String] = []
         queue.enqueue(isAutomatic: false) {
             order.append("first-start")
@@ -591,7 +622,7 @@ struct SnippetsTests {
         check("automatic cancellation cannot run a queued stale delivery", !automaticRan)
 
         var completionCount = 0
-        let completion = SnippetDeliveryCompletion { completionCount += 1 }
+        let completion = DeliveryCompletion { completionCount += 1 }
         completion.confirm()
         completion.confirm()
         check(
@@ -600,19 +631,19 @@ struct SnippetsTests {
 
         check(
             "unavailable AX text attributes use the event delivery fallback",
-            SnippetAccessibilityReplacement.unavailable.fallsBackToEvents)
+            AccessibilityReplacement.unavailable.fallsBackToEvents)
         check(
             "a rejected AX keyword replacement fails closed instead of deleting by events",
-            !SnippetAccessibilityReplacement.rejected.fallsBackToEvents)
+            !AccessibilityReplacement.rejected.fallsBackToEvents)
         check(
             "unreadable AX state accepts a posted paste after the conservative delay",
-            SnippetPasteConfirmationPolicy.acceptsUnconfirmedDelivery(
+            PasteConfirmationPolicy.acceptsUnconfirmedDelivery(
                 attempt: 15,
                 hadPreviousState: true,
                 readStateAfterPaste: false))
         check(
             "readable unchanged AX state is not treated as a confirmed paste",
-            !SnippetPasteConfirmationPolicy.acceptsUnconfirmedDelivery(
+            !PasteConfirmationPolicy.acceptsUnconfirmedDelivery(
                 attempt: 79,
                 hadPreviousState: true,
                 readStateAfterPaste: true))
@@ -726,14 +757,14 @@ struct SnippetsTests {
         let externalURL = repository.snippetsDirectory.appendingPathComponent("external.md")
         try SnippetMarkdownSerializer.serialize(Snippet(name: "External", text: "One"))
             .write(to: externalURL, atomically: true, encoding: .utf8)
-        try await Task.sleep(for: .milliseconds(500))
+        await settle { store.snippets.contains { $0.id == externalURL.path && $0.snippet.text == "One" } }
         check(
             "watcher reloads an externally created file",
             store.snippets.contains { $0.id == externalURL.path && $0.snippet.text == "One" })
 
         try SnippetMarkdownSerializer.serialize(Snippet(name: "External", text: "Two"))
             .write(to: externalURL, atomically: true, encoding: .utf8)
-        try await Task.sleep(for: .milliseconds(500))
+        await settle { store.record(id: externalURL.path)?.snippet.text == "Two" }
         check(
             "watcher observes atomic file replacement",
             store.record(id: externalURL.path)?.snippet.text == "Two")
@@ -744,7 +775,7 @@ struct SnippetsTests {
         try handle.truncate(atOffset: 0)
         try handle.write(contentsOf: Data(inPlaceSource.utf8))
         try handle.close()
-        try await Task.sleep(for: .milliseconds(500))
+        await settle { store.record(id: externalURL.path)?.snippet.text == "Three" }
         check(
             "watcher observes same-inode truncate and write",
             store.record(id: externalURL.path)?.snippet.text == "Three")
@@ -761,8 +792,10 @@ struct SnippetsTests {
             withItemAt: replacementDirectory,
             backupItemName: nil,
             options: [])
-        try await Task.sleep(for: .milliseconds(700))
         let installedReplacementURL = repository.snippetsDirectory.appendingPathComponent("replacement.md")
+        await settle(within: .milliseconds(700)) {
+            store.snippets.count == 1 && store.snippets.first?.id == installedReplacementURL.path
+        }
         check(
             "watcher rearms after directory replacement",
             store.snippets.count == 1 && store.snippets.first?.id == installedReplacementURL.path)
@@ -775,7 +808,9 @@ struct SnippetsTests {
         let recreatedURL = repository.snippetsDirectory.appendingPathComponent("recreated.md")
         try SnippetMarkdownSerializer.serialize(Snippet(name: "Recreated", text: "Newest"))
             .write(to: recreatedURL, atomically: true, encoding: .utf8)
-        try await Task.sleep(for: .milliseconds(700))
+        await settle(within: .milliseconds(700)) {
+            store.snippets.count == 1 && store.record(id: recreatedURL.path)?.snippet.text == "Newest"
+        }
         check(
             "watcher rearms after an explicit rename-away and recreation",
             store.snippets.count == 1
@@ -783,7 +818,10 @@ struct SnippetsTests {
         try fm.removeItem(at: renamedDirectory)
 
         try fm.removeItem(at: repository.snippetsDirectory)
-        try await Task.sleep(for: .milliseconds(700))
+        await settle(within: .milliseconds(700)) {
+            store.state == .ready && store.snippets.isEmpty
+                && fm.fileExists(atPath: repository.snippetsDirectory.path)
+        }
         check(
             "watcher recreates a deleted initialized directory without samples",
             store.state == .ready && store.snippets.isEmpty
@@ -791,6 +829,7 @@ struct SnippetsTests {
         let afterDeleteURL = repository.snippetsDirectory.appendingPathComponent("after-delete.md")
         try SnippetMarkdownSerializer.serialize(Snippet(name: "After Delete", text: "Rearmed"))
             .write(to: afterDeleteURL, atomically: true, encoding: .utf8)
+        // Not a settle: the burst below counts snapshots, so this reload must be fully quiet first.
         try await Task.sleep(for: .milliseconds(500))
         check(
             "watcher continues after deleted-directory recovery",
@@ -804,6 +843,7 @@ struct SnippetsTests {
             )
             .write(to: fileURL, atomically: true, encoding: .utf8)
         }
+        // A poll would stop at the first snapshot and miss a second one arriving.
         try await Task.sleep(for: .milliseconds(500))
         check(
             "watcher debounces a burst into one published reload",
@@ -815,7 +855,7 @@ struct SnippetsTests {
             to: corruptURL,
             atomically: true,
             encoding: .utf8)
-        try await Task.sleep(for: .milliseconds(500))
+        await settle { store.issues.contains { $0.fileURL.lastPathComponent == "corrupt.md" } }
         check(
             "watcher publishes corrupt-file issues without dropping valid files",
             store.issues.contains { $0.fileURL.lastPathComponent == "corrupt.md" }
@@ -998,7 +1038,7 @@ struct SnippetsTests {
         check("reference depth limit leaves the unexpanded token visible", depthResult.text == "{snippet:S6}")
     }
 
-    /// The Raycast-compatible placeholder set: every token, parameter and modifier, against an injected clock, locale, clipboard history and UUID source.
+    /// Every token, parameter and modifier, against injected clock, locale and UUIDs.
     private static func testDynamicPlaceholders() {
         var calendar = Calendar(identifier: .gregorian)
         let timeZone = TimeZone(secondsFromGMT: 0)!
@@ -1182,8 +1222,7 @@ struct SnippetsTests {
             ).text == "[]")
     }
 
-    /// The engine is shared with Quicklinks: it also expands a bare string, can percent-encode every
-    /// value it produces, and accepts Raycast's `{selectedText}` spelling of `{selection}`.
+    /// Shared with Quicklinks: bare strings, encoding, and Raycast's `{selectedText}`.
     private static func testTemplateEncodingAndSelectionAlias() {
         var calendar = Calendar(identifier: .gregorian)
         let timeZone = TimeZone(secondsFromGMT: 0)!
@@ -1581,6 +1620,17 @@ struct SnippetsTests {
         }
     }
 
+    // The same budget a fixed sleep spent, but a prompt watcher costs milliseconds of it.
+    private static func settle(
+        within timeout: Duration = .milliseconds(500),
+        until condition: () -> Bool
+    ) async {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline, !condition() {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
     private static func check(_ description: String, _ condition: @autoclosure () -> Bool) {
         if condition() {
             print("PASS  \(description)")
@@ -1592,25 +1642,8 @@ struct SnippetsTests {
     }
 }
 
-private final class RevalidationRendezvous: @unchecked Sendable {
-    private let condition = NSCondition()
-    private var arrivals = 0
-
-    func arriveAndWait() {
-        condition.lock()
-        arrivals += 1
-        if arrivals == 2 {
-            condition.broadcast()
-        } else {
-            let deadline = Date().addingTimeInterval(0.25)
-            while arrivals < 2, condition.wait(until: deadline) {}
-        }
-        condition.unlock()
-    }
-}
-
 @MainActor
-private final class CountingPasteboard: SnippetPasteboardAccess {
+private final class CountingPasteboard: PasteboardAccess {
     let backing: NSPasteboard
     private(set) var clearCount = 0
     private(set) var writeCount = 0
@@ -1672,9 +1705,10 @@ enum Permissions {
 enum Paster {
     static let tinycastEventTag: Int64 = 0x54494E59
     @MainActor static func postCommandV(toPid pid: pid_t? = nil) {}
+    @MainActor static func postCommandC(toPid pid: pid_t? = nil) {}
 }
 
-/// Deterministic `{uuid}` source. `@unchecked Sendable` with a lock because `makeUUID` is a `@Sendable` closure.
+/// Deterministic `{uuid}` source; the lock is why it is `@unchecked Sendable`.
 private final class UUIDSequence: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0

@@ -13,10 +13,13 @@ struct ClipboardTests {
         pasteLeavesPinsAlone()
         pinsSurvivePruningAndTheWindow()
         pinsLeadFilteredSearches()
+        pinnedSlotResolutionUsesVisiblePins()
         textFormClassification()
         typeFilterSplitsTheHistory()
         typeFilterJoinsTheSearchMemo()
         persistence()
+        exportSeesPastTheMemoryWindow()
+        importedImagesArriveOnce()
 
         print("\(passes)/\(passes + failures) passed")
         if failures > 0 { exit(1) }
@@ -89,7 +92,7 @@ struct ClipboardTests {
     /// Retention sweeps everything around a pin but never the pin itself.
     static func pinsSurvivePruningAndTheWindow() {
         withStore { store, dir in
-            // Older than the 1-day retention the case sets below, but inside the default the import prunes against.
+            // Older than the case's 1-day retention, inside the default the import prunes against.
             let old = Date().addingTimeInterval(-2 * 86_400)
             _ = store.importEntries([
                 entry("ancient-pinned", at: old),
@@ -140,6 +143,44 @@ struct ClipboardTests {
             expect(
                 short.first?.text == "needle in the haystack",
                 "the pinned match leads the fallback search too")
+        }
+    }
+
+    /// Slot picks are taken from the visible pinned block after query/filter, not from all pins.
+    static func pinnedSlotResolutionUsesVisiblePins() {
+        withStore { store, _ in
+            store.addText("alpha one", sourceBundleID: nil)
+            store.addText("beta two", sourceBundleID: nil)
+            store.addText("beta three", sourceBundleID: nil)
+            store.addText("plain text", sourceBundleID: nil)
+
+            store.togglePinned(item(store, "alpha one"))
+            store.togglePinned(item(store, "beta two"))
+            store.togglePinned(item(store, "beta three"))
+
+            expect(
+                store.pinnedItem(at: 0, in: "", filter: .all)?.text == "alpha one",
+                "slot 1 maps to the first pinned row")
+            expect(
+                store.pinnedItem(at: 2, in: "", filter: .all)?.text == "beta three",
+                "slot 3 maps to the third pinned row")
+            expect(
+                store.pinnedItem(at: 3, in: "", filter: .all) == nil,
+                "missing pinned slot returns nil")
+
+            expect(
+                store.pinnedItem(at: 0, in: "beta", filter: .all)?.text == "beta two",
+                "query narrows the pinned block before slot mapping")
+            expect(
+                store.pinnedItem(at: 1, in: "beta", filter: .all)?.text == "beta three",
+                "slot mapping follows visible pinned order under query")
+            expect(
+                store.pinnedItem(at: 2, in: "beta", filter: .all) == nil,
+                "query can remove pinned slots from reach")
+
+            expect(
+                store.pinnedItem(at: 0, in: "", filter: .link) == nil,
+                "filter applies before pinned slot mapping")
         }
     }
 
@@ -238,6 +279,52 @@ struct ClipboardTests {
 
             reopened.clearAll()
             expect(reopened.items.isEmpty, "Clear History takes pins too")
+        }
+    }
+
+    /// A backup reads the whole table, not `items` — which stops at the memory window.
+    static func exportSeesPastTheMemoryWindow() {
+        withStore { store, _ in
+            let total = 1_200
+            store.importEntries(
+                (0..<total).map {
+                    ClipboardItem(
+                        id: UUID(), kind: .text, text: "entry \($0)", imagePath: nil,
+                        createdAt: Date().addingTimeInterval(TimeInterval($0 - total)),
+                        sourceBundleID: nil)
+                })
+            expect(store.items.count < total, "the resident window holds back some of the history")
+
+            var streamed = 0
+            var seen = Set<String>()
+            ClipboardStore.forEachStoredItem(inDatabaseAt: store.dbURL) { item in
+                streamed += 1
+                if let text = item.text { seen.insert(text) }
+            }
+            expect(streamed == total, "the export streams every row, not just the window")
+            expect(seen.count == total, "every row arrives exactly once")
+        }
+    }
+
+    /// Importing one backup twice must not leave a second copy of every image.
+    static func importedImagesArriveOnce() {
+        withStore { store, dir in
+            let staging = dir.appendingPathComponent("staged", isDirectory: true)
+            try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            let blob = staging.appendingPathComponent("blob.png")
+            let staged = ClipboardItem(imagePath: blob.path, sourceBundleID: nil)
+
+            for pass in 1...2 {
+                try? Data("png".utf8).write(to: blob)
+                let inserted = ClipboardStore.importStoredItems(
+                    inDatabaseAt: store.dbURL, adoptingImagesInto: store.imagesDir, [staged])
+                expect(inserted == (pass == 1 ? 1 : 0), "pass \(pass) inserts \(2 - pass) row(s)")
+            }
+            store.load()
+            expect(store.items.count == 1, "the second import adds no row")
+            let images =
+                (try? FileManager.default.contentsOfDirectory(atPath: store.imagesDir.path)) ?? []
+            expect(images == ["blob.png"], "and no second copy of the blob")
         }
     }
 

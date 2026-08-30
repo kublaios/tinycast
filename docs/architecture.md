@@ -21,19 +21,20 @@ Independently of the folder tree, every mature subsystem has converged on the sa
 │ Uninstall{Target,SearchRoot,Rules,Protection,Plan} ·                       │
 │ Quicklink{,Destination,Store,Archive} · Notes/Model/* · Snippets/Model/* · │
 │ ShellCommandRunner · DoubleTap{Modifier,Detector} · ClipboardStore ·       │
-│ RaycastFormat · RaycastV1Decoder · AppSettingsKey · SettingsBackupCoverage │
+│ RaycastDecoder · Scrypt · AppSettingsKey · SettingsBackupCoverage          │
 │ MeetingLink · MeetingEvent · UpcomingWindow · MeetingDay · MenuBarSummary  │
-│ AutoJoinPolicy · EventDraft · MenuSearchItem                               │
+│ AutoJoinPolicy · EventDraft · MenuSearchItem · SupportReminderSchedule     │
 └──────────────────────────────────┬─────────────────────────────────────────┘
                                    │ consumed by
 ┌─ EFFECT ─────────────────────────▼─────────────────────────────────────────┐
 │ All platform I/O, one folder per feature.                                  │
 │ AppIndex · SpotlightNames · FileSearchService · SettingsPaneScanner ·      │
 │ IconCache · WindowMover · UninstallScanner · UninstallRunner ·             │
-│ SystemActionRunner · QuicklinkLauncher · SnippetTextInjector ·             │
+│ SystemActionRunner · QuicklinkLauncher · TextInjector ·             │
 │ SnippetKeywordListener · NotesRepository · CurrencyRateStore · Paster ·    │
 │ HotKeyCenter · HyperKeyTap · DoubleTapMonitor · RunningAppsMonitor ·       │
-│ CalendarStore · MeetingLauncher · MeetingClock · CameraPreviewSession      │
+│ CalendarStore · MeetingLauncher · MeetingClock · CameraPreviewSession ·    │
+│ SupportReminderStore                                                       │
 └──────────────────────────────────┬─────────────────────────────────────────┘
                                    │ published through
 ┌─ OBSERVABLE STATE ───────────────▼─────────────────────────────────────────┐
@@ -125,6 +126,10 @@ imperatively from AppKit.
   confirmations, failure reports and value prompts. Presentation is `async`, so nothing blocks the main
   actor, and the presenter refuses a second dialog while one is up — that, not a flag, is what stops a
   held hotkey stacking dialogs.
+- **Support** — a titled `AppWindowController` window owned by `SupportCoordinator`, sized to the
+  height its content measured. Every route into it — the palette's menu circle, Settings → About, the
+  menu bar, the launcher, and the 30-day reminder — lands on `showSupport()`, which is what moves the
+  reminder's anchor. See [features/support.md](features/support.md).
 - **The camera preview** — a borderless, non-activating `CameraPreviewPanel` at `.floating`,
   managed by `CameraPreviewController` and owned by `CalendarCoordinator` the way `NotesCoordinator`
   owns its window. It gates a join and doubles as auto join's confirmation.
@@ -199,6 +204,7 @@ Tinycast/
     Launcher/ Clipboard/ Calculator/ Calendar/ Emoji/ FileSearch/ MenuSearch/ Notes/ Quicklinks/
     Snippets/
     Uninstall/ SystemActions/ CustomCommands/ HotKeys/ Backup/ WindowManagement/ Onboarding/
+    Updates/ Support/ AI/ Settings/
     Extensions/
         Model/      pure — the harness inputs
         Service/    effects — stores, monitors, runners, AppKit glue

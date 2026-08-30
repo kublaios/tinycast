@@ -44,7 +44,8 @@ enum AXMenuService {
         for (index, child) in children(of: element).enumerated() {
             let childPath = elementPath + [index]
             let role = string(child, attribute: kAXRoleAttribute as CFString)
-            let title = string(child, attribute: kAXTitleAttribute as CFString)?
+            let title =
+                string(child, attribute: kAXTitleAttribute as CFString)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let descendants = children(of: child)
 

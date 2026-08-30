@@ -1,13 +1,9 @@
 import SwiftUI
 
-/// The palette mode a running view command draws into.
-///
-/// `ExtensionScreen` decides the row order; this only adapts it to the palette, so the flat
-/// `selection` index still maps 1:1 onto visible rows (see docs/features/palette.md).
+/// `ExtensionScreen` decides the row order; this maps `selection` 1:1 onto visible rows.
 struct ExtensionCommandScreen: PaletteScreen {
     let screen: ExtensionScreen
     let extensions: ExtensionManager
-    let core: AppCore
     let vm: PaletteState
     let openActions: () -> Void
 
@@ -22,8 +18,7 @@ struct ExtensionCommandScreen: PaletteScreen {
     /// Selectable rows only: a section header is drawn but never landed on.
     var rows: [ExtensionScreen.Item] { screen.items }
 
-    /// A Grid needs both axes: ↑/↓ move a whole row, ←/→ move one cell. Without this the palette's
-    /// linear step applies, and ↓ walked sideways through the grid one tile at a time.
+    /// A Grid needs both axes: without this ↓ walks sideways one tile at a time.
     func move(_ delta: Int, axis: PaletteAxis, from selection: Int) -> Int? {
         guard case .grid(let columns) = screen.kind, columns > 0, !rows.isEmpty else { return nil }
         switch axis {
@@ -46,9 +41,28 @@ struct ExtensionCommandScreen: PaletteScreen {
 
     func hasPrimaryAction(at selection: Int) -> Bool { primaryAction(at: selection) != nil }
 
-    func actions(at selection: Int) -> PopoverMenuContent? {
-        ExtensionActionsMenu.content(
-            screen: screen, selection: selection, assetsPath: assetsPath, core: core)
+    /// A command's rows carry tinted icons and its panel scrolls; a menu row cannot.
+    func menuContent(
+        at selection: Int, menuSelection: Binding<Int>, onActivate: @escaping (Int) -> Void
+    ) -> PaletteMenuContent? {
+        let actions = ExtensionScreen.actions(in: screen.actionPanel(forItemAt: selection))
+        guard !actions.isEmpty else { return nil }
+        let screen = screen
+        let assetsPath = assetsPath
+        let extensions = extensions
+        return PaletteMenuContent(
+            rowCount: actions.count,
+            view: {
+                AnyView(
+                    ExtensionActionsPanel(
+                        header: ExtensionActionsMenu.header(screen: screen, selection: selection),
+                        items: ExtensionActionsMenu.rows(actions, assetsPath: assetsPath),
+                        selection: menuSelection, onActivate: onActivate))
+            },
+            activate: { index in
+                guard let handler = actions[index].handler else { return }
+                extensions.dispatch(handler: handler)
+            })
     }
 
     func activate(at selection: Int) {
@@ -79,8 +93,7 @@ struct ExtensionCommandScreen: PaletteScreen {
             ))
     }
 
-    /// An extension action can declare its own shortcut; a modified keystroke is matched against the
-    /// panel before the palette's own handling. Returns true when one fired.
+    /// Matched before the palette's own handling; true when an action fired.
     func dispatchShortcut(key: KeyEquivalent, modifiers: EventModifiers, at selection: Int) -> Bool {
         let actions = ExtensionScreen.actions(in: screen.actionPanel(forItemAt: selection))
         guard

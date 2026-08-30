@@ -15,7 +15,7 @@ final class AppCore {
     let snippetsStore: SnippetsStore
     let snippetListener = SnippetKeywordListener(
         syntheticEventTag: Paster.tinycastEventTag)
-    let snippetTextInjector: SnippetTextInjector
+    let textInjector: TextInjector
     let hotKeys = HotKeyManager()
     let hyperKeyTap = HyperKeyTap()
     let windowMover = WindowMover()
@@ -27,11 +27,13 @@ final class AppCore {
     let favorites = FavoritesStore()
     let visibility = VisibilityStore()
     let aliases = AliasStore()
+    let fallbacks = FallbackStore()
     let calcHistory = CalculatorHistoryStore()
     let currencyRates = CurrencyRateStore()
     let calendarStore = CalendarStore()
     let meetingClock = MeetingClock()
     let updateChecker = UpdateCheckStore()
+    let supportReminders: SupportReminderStore
     let emojiIndex = EmojiIndex()
     let frequentEmoji = FrequentEmojiStore()
     let runningApps = RunningAppsMonitor()
@@ -41,23 +43,34 @@ final class AppCore {
     let activationPolicy = ActivationPolicy()
     let uninstall = UninstallSession()
     let quicklinkArguments = QuicklinkArgumentSession()
+    let customCommandArguments = CustomCommandArgumentSession()
     let notesStore: NotesStore
     let extensions: ExtensionManager
+    let chatHistory: ChatHistoryStore
+    let aiChat: AIChatState
+    let aiSettings = AISettingsStore(
+        isAppleIntelligenceAvailable: { AppleIntelligenceProvider.status().isAvailable })
+    let quickActionSettings = QuickActionSettingsStore()
+    let chatGPTSubscription = ChatGPTSubscriptionManager()
 
     /// Set when a quicklink editor should open with Settings; the pane consumes it.
     var pendingQuicklinkEdit: QuicklinkEditRequest?
+    /// Set when a snippet editor should open with Settings; the pane consumes it.
+    var pendingSnippetEdit: SnippetEditRequest?
 
-    @ObservationIgnored private(set) lazy var snippetExpansion = SnippetExpansionCoordinator(
-        store: snippetsStore, listener: snippetListener, injector: snippetTextInjector,
+    @ObservationIgnored private(set) lazy var snippetCoordinator = SnippetCoordinator(
+        store: snippetsStore, listener: snippetListener, injector: textInjector,
         clipboardStore: clipboardStore, appIndex: appIndex, settings: settings,
+        windowController: windowController, paletteCoordinator: paletteCoordinator,
+        settingsCoordinator: settingsCoordinator,
         showMessage: { [unowned self] in self.showMessage($0) }, core: self)
     @ObservationIgnored private(set) lazy var quicklinkCoordinator = QuicklinkCoordinator(
         store: quicklinks, argumentSession: quicklinkArguments, settings: settings,
-        appIndex: appIndex, injector: snippetTextInjector, hotKeys: hotKeys, favorites: favorites,
+        appIndex: appIndex, injector: textInjector, hotKeys: hotKeys, favorites: favorites,
         visibility: visibility, ranking: launcherRanking, aliases: aliases,
         windowController: windowController,
         paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
-        clipboardHistory: { [unowned self] in self.snippetExpansion.clipboardHistoryForExpansion() },
+        clipboardHistory: { [unowned self] in self.snippetCoordinator.clipboardHistoryForExpansion() },
         core: self)
 
     @ObservationIgnored private(set) lazy var paletteCoordinator = PaletteCoordinator(
@@ -81,10 +94,11 @@ final class AppCore {
         settings: settings, paletteCoordinator: paletteCoordinator, windowMover: windowMover,
         spaceSwitcher: spaceSwitcher)
     @ObservationIgnored private(set) lazy var customCommandCoordinator = CustomCommandCoordinator(
-        store: customCommands, settings: settings, appIndex: appIndex,
+        store: customCommands, argumentSession: customCommandArguments, settings: settings,
+        appIndex: appIndex,
         paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
         hotKeys: hotKeys, favorites: favorites, visibility: visibility,
-        ranking: launcherRanking, aliases: aliases, core: self)
+        ranking: launcherRanking, aliases: aliases, activationPolicy: activationPolicy, core: self)
     @ObservationIgnored private(set) lazy var notesCoordinator = NotesCoordinator(
         store: notesStore,
         settings: settings,
@@ -99,11 +113,13 @@ final class AppCore {
         systemActionCoordinator: systemActionCoordinator,
         quicklinkCoordinator: quicklinkCoordinator,
         windowCommandCoordinator: windowCommandCoordinator,
-        snippetExpansion: snippetExpansion, fileSearchCoordinator: fileSearchCoordinator,
+        snippetCoordinator: snippetCoordinator, fileSearchCoordinator: fileSearchCoordinator,
         menuSearchCoordinator: menuSearchCoordinator,
         notesCoordinator: notesCoordinator, extensionCoordinator: extensionCoordinator,
         calendarCoordinator: calendarCoordinator,
         core: self)
+    @ObservationIgnored private(set) lazy var fallbackCoordinator = FallbackCoordinator(
+        store: fallbacks, quicklinks: quicklinks, settings: settings, core: self)
     @ObservationIgnored private(set) lazy var clipboardCoordinator = ClipboardCoordinator(
         clipboardStore: clipboardStore, palette: palette, windowController: windowController,
         paletteCoordinator: paletteCoordinator, core: self)
@@ -122,6 +138,15 @@ final class AppCore {
         session: menuSearch, palette: palette, paletteCoordinator: paletteCoordinator, core: self)
     @ObservationIgnored private(set) lazy var updateCoordinator = UpdateCoordinator(
         store: updateChecker, core: self)
+    @ObservationIgnored private(set) lazy var supportCoordinator = SupportCoordinator(
+        store: supportReminders, core: self)
+    @ObservationIgnored private(set) lazy var quickActionCoordinator = QuickActionCoordinator(
+        settings: settings, store: quickActionSettings, injector: textInjector,
+        appIndex: appIndex, paletteCoordinator: paletteCoordinator, core: self)
+    @ObservationIgnored private(set) lazy var aiChatCoordinator = AIChatCoordinator(
+        chat: aiChat, settings: settings, appIndex: appIndex, palette: palette,
+        paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
+        core: self)
 
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)
@@ -132,14 +157,18 @@ final class AppCore {
     private init() {
         let launcherRanking = LauncherRankingStore()
         let settings = AppSettings()
+        let chatHistory = ChatHistoryStore(directory: AppPaths.applicationSupport())
         self.launcherRanking = launcherRanking
         self.settings = settings
+        self.chatHistory = chatHistory
+        supportReminders = SupportReminderStore(settings: settings)
+        aiChat = AIChatState(history: chatHistory)
         appIndex = AppIndex(ranking: launcherRanking, aliases: aliases)
         let clipboardManager = ClipboardManager(store: clipboardStore, settings: settings)
         self.clipboardManager = clipboardManager
         extensions = ExtensionManager(clipboardStore: clipboardStore)
         snippetsStore = SnippetsStore()
-        snippetTextInjector = SnippetTextInjector(
+        textInjector = TextInjector(
             clipboardManager: clipboardManager,
             settings: settings)
         let noteSelectionKey = "notesActiveFileName"
@@ -171,6 +200,8 @@ final class AppCore {
             fileSearchCoordinator.applyEnabled()
             fileSearchCoordinator.applyPolicy()
             notesCoordinator.applyEnabled()
+            aiChatCoordinator.applyEnabled()
+            quickActionCoordinator.applyEnabled()
             customCommands.onChange = { [weak self] _ in
                 self?.customCommandCoordinator.applyCustomCommandsPresence()
             }
@@ -191,24 +222,15 @@ final class AppCore {
                 self?.updateCoordinator.presentIfAvailable(release) ?? true
             }
             applyAutomaticUpdateChecks()
+            supportReminders.onDue = { [weak self] in self?.supportCoordinator.presentIfDue() }
+            supportReminders.start()
 
             hyperKeyTap.healthTicker = healthTicker
             hotKeys.doubleTapMonitor.healthTicker = healthTicker
             snippetListener.healthTicker = healthTicker
 
             hotKeys.onTogglePalette = { [weak self] in self?.paletteCoordinator.togglePalette() }
-            hotKeys.onToggleClipboard = { [weak self] in self?.paletteCoordinator.toggleClipboard() }
-            hotKeys.onToggleEmoji = { [weak self] in self?.paletteCoordinator.toggleEmoji() }
-            hotKeys.onShowNotes = { [weak self] in self?.notesCoordinator.show() }
-            hotKeys.onCreateNote = { [weak self] in self?.notesCoordinator.createNote() }
-            hotKeys.onSearchNotes = { [weak self] in self?.notesCoordinator.searchNotes() }
-            hotKeys.onSearchFiles = { [weak self] in self?.fileSearchCoordinator.show() }
-            hotKeys.onSearchMenuItems = { [weak self] in self?.menuSearchCoordinator.show() }
-            hotKeys.onJoinNextMeeting = { [weak self] in
-                self?.calendarCoordinator.joinNextMeeting()
-            }
-            hotKeys.onShowSchedule = { [weak self] in self?.calendarCoordinator.showSchedule() }
-            hotKeys.onCreateEvent = { [weak self] in self?.calendarCoordinator.createEvent() }
+            hotKeys.onRunCommand = { [weak self] id in self?.launcherCoordinator.runCommand(id) }
             hotKeys.onRunCustomCommand = { [weak self] id in
                 self?.customCommandCoordinator.runCustomCommand(id: id)
             }
@@ -228,6 +250,12 @@ final class AppCore {
                 self?.extensionCoordinator.removeExtensionReferences(entryIDs: entryIDs)
             }
             hotKeys.displayName = { [weak self] action in self?.hotKeyDisplayName(for: action) }
+            hotKeys.allowsAction = { [weak self] action in
+                guard let self, visibility.allowsHotKey(action) else { return false }
+                // A disabled feature drops its commands from the launcher; their shortcuts go too.
+                guard case .command(let id) = action else { return true }
+                return appIndex.isCommandEnabled(id)
+            }
             KeyShortcut.displayedHyperChord = { [settings] in
                 guard settings.hyperKey != .none else { return nil }
                 return KeyShortcut.hyperChord(includesShift: settings.hyperKeyIncludesShift)
@@ -243,14 +271,16 @@ final class AppCore {
 
             snippetsStore.onSnapshot = { [weak self] snapshot in
                 guard let self else { return }
-                self.snippetExpansion.applySnippetsLauncherPresence()
+                self.snippetCoordinator.applySnippetsLauncherPresence()
                 self.snippetListener.update(snapshot.records)
             }
             // Off out of the box, so an unused feature costs no load, watcher or tap.
             if settings.snippetsEnabled {
                 Task { await snippetsStore.start() }
-                snippetExpansion.startSnippetKeywordListener()
+                snippetCoordinator.startSnippetKeywordListener()
             }
+            // Unconditional: a disabled feature has to take its command rows down with it.
+            snippetCoordinator.applySnippetsLauncherPresence()
 
             observeFeatureSwitches()
 
@@ -267,6 +297,8 @@ final class AppCore {
         if settingsCoordinator.focusExisting() { return }
         if onboardingCoordinator.focusExisting() { return }
         if updateCoordinator.focusExisting() { return }
+        if supportCoordinator.focusExisting() { return }
+        if customCommandCoordinator.focusOutputWindow() { return }
         paletteCoordinator.showPalette(mode: .launcher, restoreAnyMode: true)
     }
 
@@ -295,10 +327,7 @@ final class AppCore {
             return quicklinks.quicklink(id: id)?.name
         case .extensionCommand(let entryID):
             return appIndex.apps.first { $0.kind == .extensionCommand && $0.id == entryID }?.name
-        case .togglePalette, .toggleClipboard, .toggleEmoji, .searchFiles, .searchMenuItems,
-            .systemAction, .showNotes, .createNote, .searchNotes, .windowCommand, .joinNextMeeting,
-            .mySchedule,
-            .createEvent:
+        case .togglePalette, .command, .systemAction, .windowCommand:
             return nil
         }
     }
@@ -311,9 +340,28 @@ final class AppCore {
         // Caps Lock first: its remap is the one teardown that outlives the process.
         hyperKeyTap.prepareForTermination()
         inputSourceSwitcher.endSession()
-        snippetTextInjector.prepareForTermination()
+        textInjector.prepareForTermination()
         snippetListener.stop()
         snippetsStore.stop()
+        aiChat.cancel()
+        chatGPTSubscription.stop()
+    }
+
+    func aiProvider() throws -> any AIProvider {
+        try AIProviderFactory.make(
+            settings: aiSettings, subscription: chatGPTSubscription)
+    }
+
+    /// Permissive guardrails: the text transformed is the reader's own, which `.default` refuses.
+    func quickActionProvider() throws -> any AIProvider {
+        quickActionSettings.repairModel(
+            against: aiSettings.connections, fallback: aiSettings.defaultModel)
+        guard let selection = quickActionSettings.model ?? aiSettings.defaultModel else {
+            throw AIProviderError.unavailable("Choose a model in Settings \u{2192} Quick Actions.")
+        }
+        return try AIProviderFactory.make(
+            selection: selection, settings: aiSettings, subscription: chatGPTSubscription,
+            guardrails: .permissiveContentTransformations)
     }
 
     // MARK: - Feature switches
@@ -336,6 +384,10 @@ final class AppCore {
             }, reproject: { $0.quicklinkCoordinator.applyQuicklinksPresence() })
         track({ _ = $0.fileSearchEnabled }, reproject: { $0.fileSearchCoordinator.applyEnabled() })
         track({ _ = $0.notesEnabled }, reproject: { $0.notesCoordinator.applyEnabled() })
+        track({ _ = $0.aiEnabled }, reproject: { $0.aiChatCoordinator.applyEnabled() })
+        track(
+            { _ = $0.quickActionsEnabled },
+            reproject: { $0.quickActionCoordinator.applyEnabled() })
         track(
             { _ = $0.automaticUpdateChecksEnabled },
             reproject: { $0.applyAutomaticUpdateChecks() })
@@ -344,6 +396,9 @@ final class AppCore {
                 _ = $0.calendarEnabled
                 _ = $0.calendarShowInLauncher
             }, reproject: { $0.calendarCoordinator.applyEnabled() })
+        track(
+            { _ = $0.calendarIncludesTomorrow },
+            reproject: { $0.calendarCoordinator.applySpan() })
         track(
             {
                 _ = $0.autoJoinMeetings
@@ -354,12 +409,12 @@ final class AppCore {
                 _ = $0.fileSearchScopes
                 _ = $0.fileSearchIgnorePatterns
             }, reproject: { $0.fileSearchCoordinator.applyPolicy() })
-        track({ _ = $0.snippetsEnabled }, reproject: { $0.snippetExpansion.applySnippetsEnabled() })
+        track({ _ = $0.snippetsEnabled }, reproject: { $0.snippetCoordinator.applySnippetsEnabled() })
         // Not a feature switch, but the same re-projection: a combo has the chord's ⇧ bit baked in.
         track({ _ = $0.hyperKeyIncludesShift }, reproject: { $0.applyHyperChord() })
         track(
             { _ = $0.snippetsShowInLauncher },
-            reproject: { $0.snippetExpansion.applySnippetsLauncherPresence() })
+            reproject: { $0.snippetCoordinator.applySnippetsLauncherPresence() })
         track({ _ = $0.appearance }, reproject: { $0.applyAppearance() })
     }
 
@@ -371,13 +426,12 @@ final class AppCore {
         }
     }
 
-    /// `.system` resolves to `nil`, which is what makes AppKit follow macOS without anything polling.
+    /// `.system` resolves to `nil`, so AppKit follows macOS with nothing polling.
     private func applyAppearance() {
         NSApp.appearance = settings.appearance.nsAppearance
     }
 
-    /// Covers our own assignment and a macOS change alike, which is why `IconCache` is told here
-    /// rather than from `applyAppearance()` — under `.system` that one never fires.
+    /// IconCache is told here, not from `applyAppearance()`, which never fires under `.system`.
     private func observeEffectiveAppearance() {
         // Synchronous on main, so no row can cache a tile under the outgoing appearance's key.
         appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.initial]) { app, _ in
@@ -412,6 +466,23 @@ final class AppCore {
         appIndex.setWindowCommandsVisible(visible)
     }
 
+    // MARK: - Interruption
+
+    /// What the app is in the middle of; the update prompt and the support reminder both ask first.
+    var currentActivity: UpdateActivity {
+        UpdateActivity(
+            isExpandingSnippet: textInjector.isDelivering,
+            isRunningExtension: extensions.running != nil,
+            isUninstalling: uninstall.isTrashing,
+            isRecordingHotKey: hotKeys.recordingAction != nil,
+            isPromptingForArguments: quicklinkArguments.isActive || customCommandArguments.isActive,
+            isShowingDialog: isShowingDialog,
+            isPaletteVisible: paletteCoordinator.isVisible)
+    }
+
+    /// Whether a window may take focus without interrupting something the user started.
+    var canInterruptUser: Bool { UpdateReadiness.evaluate(currentActivity) == nil }
+
     // MARK: - Dialogs, routed here so `dialogs` stays the single owner
 
     func showNotice(title: String, message: String, symbol: String, tone: DialogTone) async {
@@ -445,6 +516,15 @@ final class AppCore {
     /// The transient success/info pill, so `messageHUD` stays single-owned alongside `dialogs`.
     func showMessage(_ message: String, tone: DialogTone = .success) {
         messageHUD.show(message: message, tone: tone)
+    }
+
+    /// The same pill with a spinner, for work the reader started and cannot otherwise see running.
+    func showProgress(_ message: String) {
+        messageHUD.showProgress(message: message)
+    }
+
+    func hideProgress() {
+        messageHUD.dismiss()
     }
 
     /// The volume slider, so `dialogs` stays the single owner of every prompt in the app.

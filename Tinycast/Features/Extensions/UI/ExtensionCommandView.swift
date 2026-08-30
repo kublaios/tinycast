@@ -44,9 +44,7 @@ struct ExtensionCommandView: View {
                     onSubmit: { onActivate(selection) })
             case .unsupported(let type):
                 if type.isEmpty {
-                    // A commit arrived but the command rendered nothing — it returned null, usually
-                    // because it has no data to show. Saying "Starting…" here would claim it is still
-                    // launching, which is how a permanently-null command looked like a hang.
+                    // A commit rendered null; "Starting…" here would look like a hang.
                     EmptyResults(text: "Nothing to show")
                 } else {
                     ExtensionFailureView(
@@ -59,8 +57,7 @@ struct ExtensionCommandView: View {
     }
 }
 
-/// A command that threw, or one Tinycast can't render. The stack trace is kept — it's the only debugging
-/// signal an extension author gets.
+/// The stack trace is kept: it is the only debugging signal an author gets.
 struct ExtensionFailureView: View {
     let message: String
 
@@ -97,8 +94,7 @@ struct ExtensionFailureView: View {
     }
 }
 
-/// Toasts a running view command raised, stacked above the footer. `showHUD` is a separate floating
-/// window (`HUDWindowController`) because a no-view command closes the palette before it finishes.
+/// `showHUD` is a separate window: a no-view command closes the palette first.
 struct ExtensionFeedbackOverlay: View {
     let toasts: [ExtensionToast]
     let onToastAction: (String) -> Void
@@ -156,40 +152,27 @@ struct ExtensionFeedbackOverlay: View {
     }
 }
 
-/// Actions menu content for the running command's current selection.
+/// The ⌘K panel's content for the running command's current selection.
 @MainActor
 enum ExtensionActionsMenu {
-    static func content(
-        screen: ExtensionScreen, selection: Int, assetsPath: String?, core: AppCore
-    ) -> PopoverMenuContent? {
-        let actions = ExtensionScreen.actions(in: screen.actionPanel(forItemAt: selection))
-        guard !actions.isEmpty else { return nil }
-        let header =
-            screen.items.indices.contains(selection)
+    /// What the panel belongs to: the selected row, or the screen when the selection has outrun it.
+    static func header(screen: ExtensionScreen, selection: Int) -> String? {
+        screen.items.indices.contains(selection)
             ? screen.items[selection].node.string("title") : screen.navigationTitle
-        return PopoverMenuContent(
-            header: header,
-            items: actions.map { action in
-                PopoverMenuItem(
-                    title: action.title,
-                    systemImage: symbolName(for: action),
-                    shortcut: action.shortcutCaps?.joined()
-                ) {
-                    guard let handler = action.handler else { return }
-                    core.extensions.dispatch(handler: handler)
-                }
-            })
     }
 
-    /// The popover menu draws SF Symbols, so an extension icon resolves to one; a file-based icon falls
-    /// back to a neutral glyph rather than an empty slot.
-    private static func symbolName(for action: ExtensionAction) -> String {
-        // Read rather than injected: a menu is rebuilt each time it opens, so it never goes stale.
-        guard
-            let resolved = ExtensionImage.resolve(
-                action.iconValue, assetsPath: nil, isDark: NSApp.effectiveAppearance.isDark),
-            case .symbol(let name) = resolved.source
-        else { return action.isDestructive ? "trash" : "bolt" }
-        return name
+    /// Rows carry a resolved `ExtensionImage`; resolving per ↑/↓ would probe symbols on main.
+    static func rows(_ actions: [ExtensionAction], assetsPath: String?) -> [ExtensionActionItem] {
+        actions.map { action in
+            ExtensionActionItem(
+                title: action.title,
+                icon: ExtensionImage.actionIcon(
+                    action.iconValue, assetsPath: assetsPath,
+                    // Read rather than injected: a panel is rebuilt each time it opens.
+                    isDark: NSApp.effectiveAppearance.isDark,
+                    isDestructive: action.isDestructive),
+                shortcut: action.shortcutCaps?.joined(),
+                isDestructive: action.isDestructive)
+        }
     }
 }
